@@ -3,7 +3,7 @@ package me.zimzaza4.geyserutils.geyser;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityLinkData;
 import org.cloudburstmc.protocol.bedrock.packet.SetEntityLinkPacket;
 import org.geysermc.geyser.GeyserImpl;
-import org.geysermc.geyser.entity.EntityDefinitions;
+import org.geysermc.geyser.entity.BedrockEntityDefinitions;
 import org.geysermc.geyser.entity.type.Entity;
 import org.geysermc.geyser.session.GeyserSession;
 
@@ -21,7 +21,7 @@ public class MountFix {
                     try {
                         for (GeyserSession session : GeyserImpl.getInstance().onlineConnections()) {
                             Entity v = session.getPlayerEntity().getVehicle();
-                            if (v != null && v.getDefinition() == EntityDefinitions.ARMOR_STAND) {
+                            if (v != null && v.definition() == BedrockEntityDefinitions.ARMOR_STAND) {
                                 session.setShouldSendSneak(true);
                                 long vehicleBedrockId = v.geyserId();
                                 if (session.getPlayerEntity().getVehicle().geyserId() == vehicleBedrockId) {

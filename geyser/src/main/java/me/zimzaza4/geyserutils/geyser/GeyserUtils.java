@@ -42,7 +42,8 @@ import org.geysermc.geyser.api.skin.Skin;
 import org.geysermc.geyser.api.skin.SkinData;
 import org.geysermc.geyser.api.skin.SkinGeometry;
 import org.geysermc.geyser.api.util.Identifier;
-import org.geysermc.geyser.entity.EntityDefinition;
+import org.geysermc.geyser.entity.BedrockEntityDefinition;
+import org.geysermc.geyser.entity.CustomBedrockEntityDefinition;
 import org.geysermc.geyser.entity.properties.GeyserEntityProperties;
 import org.geysermc.geyser.entity.properties.type.BooleanProperty;
 import org.geysermc.geyser.entity.properties.type.FloatProperty;
@@ -86,7 +87,7 @@ public class GeyserUtils implements Extension {
     @Getter
     public static Map<String, SkinData> LOADED_SKIN_DATA = new HashMap<>();
     @Getter
-    public static Map<String, EntityDefinition> LOADED_ENTITY_DEFINITIONS = new HashMap<>();
+    public static Map<String, BedrockEntityDefinition> LOADED_ENTITY_DEFINITIONS = new HashMap<>();
     @Getter
     public static Map<GeyserConnection, Cache<Integer, String>> CUSTOM_ENTITIES = new ConcurrentHashMap<>();
     static Cape EMPTY_CAPE = new Cape("", "no-cape", new byte[0], true);
@@ -137,7 +138,11 @@ public class GeyserUtils implements Extension {
 
     public static void registerProperties(String entityId) {
         if (GEYSER_LOADED) {
-            registerProperties(entityId);
+            NbtMap map = registerPropertiesForGeyser(entityId);
+            if (map != null) {
+                Registries.BEDROCK_ENTITY_PROPERTIES.get().add(map);
+            }
+            return;
         }
         ENTITIES_WAIT_FOR_LOAD.add(entityId);
     }
@@ -153,9 +158,7 @@ public class GeyserUtils implements Extension {
                     Registries.BEDROCK_ENTITY_PROPERTIES.get().removeIf(i -> i.containsKey(id));
                 });
 
-        EntityDefinition old = LOADED_ENTITY_DEFINITIONS.get(entityId);
-        LOADED_ENTITY_DEFINITIONS.replace(entityId, new EntityDefinition(old.factory(), old.entityType(), old.identifier(),
-                old.width(), old.height(), old.offset(), entityProperties, old.translators()));
+        LOADED_ENTITY_DEFINITIONS.put(entityId, createCustomBedrockDefinition(entityId, entityProperties));
 
         instance.logger().info("Defined entity: " + entityId + " in registry.");
         return entityProperties.toNbtMap(entityId);
@@ -194,10 +197,21 @@ public class GeyserUtils implements Extension {
                 .putList("idlist", NbtType.COMPOUND, idList).build()
         );
 
-        EntityDefinition<Entity> def = EntityDefinition.builder(null)
-                .height(0.1f).width(0.1f).identifier(id).propertiesBuilder(getProperties(id)).build();
+        BedrockEntityDefinition def = createCustomBedrockDefinition(id, buildProperties(id));
 
         LOADED_ENTITY_DEFINITIONS.put(id, def);
+    }
+
+    private static BedrockEntityDefinition createCustomBedrockDefinition(String id, GeyserEntityProperties properties) {
+        Identifier identifier = Identifier.of(id);
+        BedrockEntityDefinition definition = new CustomBedrockEntityDefinition(identifier, properties);
+        Registries.BEDROCK_ENTITY_DEFINITIONS.register(identifier, definition);
+        return definition;
+    }
+
+    private static GeyserEntityProperties buildProperties(String id) {
+        GeyserEntityProperties.Builder propertiesBuilder = getProperties(id);
+        return propertiesBuilder == null ? new GeyserEntityProperties() : propertiesBuilder.build();
     }
 
     @NotNull
@@ -581,11 +595,11 @@ public class GeyserUtils implements Extension {
                 if (customEntityDataPacket.getWidth() != null)
                     entity.setBoundingBoxWidth(customEntityDataPacket.getWidth());
                 if (customEntityDataPacket.getScale() != null)
-                    entity.getDirtyMetadata().put(EntityDataTypes.SCALE, customEntityDataPacket.getScale());
+                    entity.getMetadata().put(EntityDataTypes.SCALE, customEntityDataPacket.getScale());
                 if (customEntityDataPacket.getColor() != null)
-                    entity.getDirtyMetadata().put(EntityDataTypes.COLOR, Byte.parseByte(String.valueOf(getColor(customEntityDataPacket.getColor()))));
+                    entity.getMetadata().put(EntityDataTypes.COLOR, (byte) getColor(customEntityDataPacket.getColor()));
                 if (customEntityDataPacket.getVariant() != null)
-                    entity.getDirtyMetadata().put(EntityDataTypes.VARIANT, customEntityDataPacket.getVariant());
+                    entity.getMetadata().put(EntityDataTypes.VARIANT, customEntityDataPacket.getVariant());
                 entity.updateBedrockMetadata();
             }
         } else if (customPacket instanceof EntityPropertyPacket entityPropertyPacket) {

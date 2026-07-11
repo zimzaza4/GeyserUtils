@@ -27,7 +27,9 @@ package me.zimzaza4.geyserutils.geyser.replace;
 
 import org.cloudburstmc.math.vector.Vector3f;
 import org.geysermc.geyser.GeyserImpl;
-import org.geysermc.geyser.entity.EntityDefinition;
+import org.geysermc.geyser.entity.BedrockEntityDefinition;
+import org.geysermc.geyser.entity.EntityTypeDefinition;
+import org.geysermc.geyser.entity.GeyserEntityType;
 import org.geysermc.geyser.entity.spawn.EntitySpawnContext;
 import org.geysermc.geyser.entity.type.*;
 import org.geysermc.geyser.entity.type.player.PlayerEntity;
@@ -54,9 +56,15 @@ public class JavaAddEntityTranslatorReplace extends PacketTranslator<Clientbound
 
     @Override
     public void translate(GeyserSession session, ClientboundAddEntityPacket packet) {
-        EntityDefinition<?> definition = Registries.ENTITY_DEFINITIONS.get(packet.getType());
+        GeyserEntityType entityType = GeyserEntityType.of(packet.getType());
+        if (entityType.isUnregistered()) {
+            session.getGeyser().getLogger().warning("Could not find a Geyser entity type for " + entityType);
+            return;
+        }
+
+        EntityTypeDefinition<?> definition = Registries.JAVA_ENTITY_TYPES.get(entityType);
         if (definition == null) {
-            session.getGeyser().getLogger().debug("Could not find an entity definition with type " + packet.getType());
+            session.getGeyser().getLogger().debug("Could not find an entity definition with type " + packet);
             return;
         }
 
@@ -67,12 +75,20 @@ public class JavaAddEntityTranslatorReplace extends PacketTranslator<Clientbound
         float headYaw = packet.getHeadYaw();
         EntitySpawnContext context = EntitySpawnContext.fromPacket(session, definition, packet);
 
+        String def = CUSTOM_ENTITIES.get(session).getIfPresent(packet.getEntityId());
+        if (def != null) {
+            BedrockEntityDefinition customDefinition = LOADED_ENTITY_DEFINITIONS.get(def);
+            if (customDefinition != null) {
+                context.bedrockEntityDefinition(customDefinition);
+            }
+        }
+
         if (packet.getType() == EntityType.PLAYER) {
             PlayerEntity entity;
             if (packet.getUuid().equals(session.getPlayerEntity().uuid())) {
                 // Server is sending a fake version of the current player
                 entity = new PlayerEntity(context, session.getPlayerEntity().getUsername(),
-                        session.getPlayerEntity().getTexturesProperty());
+                        session.getPlayerEntity().getTextures());
             } else {
                 entity = session.getEntityCache().getPlayerEntity(packet.getUuid());
                 if (entity == null) {
@@ -99,6 +115,12 @@ public class JavaAddEntityTranslatorReplace extends PacketTranslator<Clientbound
             return;
         }
 
+        if (!context.callServerSpawnEvent()) {
+            GeyserImpl.getInstance().getLogger().debug(session, "Cancelled entity spawn (%s) at (%s)",
+                    entityType.identifier(), context.position());
+            return;
+        }
+
         Entity entity;
         if (packet.getType() == EntityType.FALLING_BLOCK) {
             entity = new FallingBlockEntity(context, ((FallingBlockData) packet.getData()).getId());
@@ -112,11 +134,6 @@ public class JavaAddEntityTranslatorReplace extends PacketTranslator<Clientbound
             } else {
                 return;
             }
-        } else if (packet.getType() == EntityType.AREA_EFFECT_CLOUD) { // No built-in MEG check yet.
-            var interactionDefinition = Registries.ENTITY_DEFINITIONS.get(EntityType.INTERACTION);
-            var interactionContext = EntitySpawnContext.fromPacket(session, interactionDefinition, packet);
-
-            entity = interactionDefinition.factory().create(interactionContext);
         } else {
             entity = definition.factory().create(context);
 
@@ -133,13 +150,8 @@ public class JavaAddEntityTranslatorReplace extends PacketTranslator<Clientbound
             }
         }
 
-        String def = CUSTOM_ENTITIES.get(session).getIfPresent(entity.getEntityId());
-        if (def != null) {
-            EntityDefinition<?> newDef = LOADED_ENTITY_DEFINITIONS.getOrDefault(def, definition);
-            entity.setDefinition(newDef);
-
-            EntitySpawnContext customContext = EntitySpawnContext.fromPacket(session, newDef, packet);
-            entity = new Entity(customContext);
+        if (context.consumers() != null) {
+            context.consumers().forEach(consumer -> consumer.accept(entity));
         }
 
         session.getEntityCache().spawnEntity(entity);
