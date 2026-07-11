@@ -42,7 +42,8 @@ import org.geysermc.geyser.api.skin.Skin;
 import org.geysermc.geyser.api.skin.SkinData;
 import org.geysermc.geyser.api.skin.SkinGeometry;
 import org.geysermc.geyser.api.util.Identifier;
-import org.geysermc.geyser.entity.EntityDefinition;
+import org.geysermc.geyser.entity.BedrockEntityDefinition;
+import org.geysermc.geyser.entity.CustomBedrockEntityDefinition;
 import org.geysermc.geyser.entity.properties.GeyserEntityProperties;
 import org.geysermc.geyser.entity.properties.type.BooleanProperty;
 import org.geysermc.geyser.entity.properties.type.FloatProperty;
@@ -76,7 +77,6 @@ import java.util.concurrent.TimeUnit;
 
 public class GeyserUtils implements Extension {
 
-
     public static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
     private static final Map<String, List<Map.Entry<String, Class<?>>>> properties = new HashMap<>();
     @Getter
@@ -86,7 +86,7 @@ public class GeyserUtils implements Extension {
     @Getter
     public static Map<String, SkinData> LOADED_SKIN_DATA = new HashMap<>();
     @Getter
-    public static Map<String, EntityDefinition> LOADED_ENTITY_DEFINITIONS = new HashMap<>();
+    public static Map<String, BedrockEntityDefinition> LOADED_ENTITY_DEFINITIONS = new HashMap<>();
     @Getter
     public static Map<GeyserConnection, Cache<Integer, String>> CUSTOM_ENTITIES = new ConcurrentHashMap<>();
     static Cape EMPTY_CAPE = new Cape("", "no-cape", new byte[0], true);
@@ -121,7 +121,6 @@ public class GeyserUtils implements Extension {
 
     private static boolean containsProperty(String entityId, String identifier) {
         if (!properties.containsKey(entityId)) return false;
-
         return properties.get(entityId).stream().anyMatch(p -> p.getKey().equalsIgnoreCase(identifier));
     }
 
@@ -137,7 +136,11 @@ public class GeyserUtils implements Extension {
 
     public static void registerProperties(String entityId) {
         if (GEYSER_LOADED) {
-            registerProperties(entityId);
+            NbtMap map = registerPropertiesForGeyser(entityId);
+            if (map != null) {
+                Registries.BEDROCK_ENTITY_PROPERTIES.get().add(map);
+            }
+            return;
         }
         ENTITIES_WAIT_FOR_LOAD.add(entityId);
     }
@@ -153,9 +156,7 @@ public class GeyserUtils implements Extension {
                     Registries.BEDROCK_ENTITY_PROPERTIES.get().removeIf(i -> i.containsKey(id));
                 });
 
-        EntityDefinition old = LOADED_ENTITY_DEFINITIONS.get(entityId);
-        LOADED_ENTITY_DEFINITIONS.replace(entityId, new EntityDefinition(old.factory(), old.entityType(), old.identifier(),
-                old.width(), old.height(), old.offset(), entityProperties, old.translators()));
+        LOADED_ENTITY_DEFINITIONS.put(entityId, createCustomBedrockDefinition(entityId, entityProperties));
 
         instance.logger().info("Defined entity: " + entityId + " in registry.");
         return entityProperties.toNbtMap(entityId);
@@ -194,10 +195,21 @@ public class GeyserUtils implements Extension {
                 .putList("idlist", NbtType.COMPOUND, idList).build()
         );
 
-        EntityDefinition<Entity> def = EntityDefinition.builder(null)
-                .height(0.1f).width(0.1f).identifier(id).propertiesBuilder(getProperties(id)).build();
+        BedrockEntityDefinition def = createCustomBedrockDefinition(id, buildProperties(id));
 
         LOADED_ENTITY_DEFINITIONS.put(id, def);
+    }
+
+    private static BedrockEntityDefinition createCustomBedrockDefinition(String id, GeyserEntityProperties properties) {
+        Identifier identifier = Identifier.of(id);
+        BedrockEntityDefinition definition = new CustomBedrockEntityDefinition(identifier, properties);
+        Registries.BEDROCK_ENTITY_DEFINITIONS.register(identifier, definition);
+        return definition;
+    }
+
+    private static GeyserEntityProperties buildProperties(String id) {
+        GeyserEntityProperties.Builder propertiesBuilder = getProperties(id);
+        return propertiesBuilder == null ? new GeyserEntityProperties() : propertiesBuilder.build();
     }
 
     @NotNull
@@ -218,16 +230,7 @@ public class GeyserUtils implements Extension {
         SkinGeometry geometry = skinData.geometry();
 
         if (entity.uuid().equals(session.getPlayerEntity().uuid())) {
-            PlayerListPacket.Entry updatedEntry = buildEntryManually(
-                    session,
-                    entity.uuid(),
-                    entity.getUsername(),
-                    entity.geyserId(),
-                    skin,
-                    cape,
-                    geometry
-            );
-
+            PlayerListPacket.Entry updatedEntry = buildEntryManually(session, entity.uuid(), entity.getUsername(), entity.geyserId(), skin, cape, geometry);
             PlayerListPacket playerAddPacket = new PlayerListPacket();
             playerAddPacket.setAction(PlayerListPacket.Action.ADD);
             playerAddPacket.getEntries().add(updatedEntry);
@@ -243,10 +246,7 @@ public class GeyserUtils implements Extension {
         }
     }
 
-    public static PlayerListPacket.Entry buildEntryManually(GeyserSession session, UUID uuid, String username, long geyserId,
-                                                            Skin skin,
-                                                            Cape cape,
-                                                            SkinGeometry geometry) {
+    public static PlayerListPacket.Entry buildEntryManually(GeyserSession session, UUID uuid, String username, long geyserId, Skin skin, Cape cape, SkinGeometry geometry) {
         SerializedSkin serializedSkin = getSkin(skin.textureUrl(), skin, cape, geometry);
 
         String xuid = "";
@@ -274,7 +274,6 @@ public class GeyserUtils implements Extension {
     }
 
     private static SerializedSkin getSkin(String skinId, Skin skin, Cape cape, SkinGeometry geometry) {
-
         try {
             ImageData image = ImageData.from(ImageIO.read(new ByteArrayInputStream(skin.skinData())));
             return SerializedSkin.of(skinId, "", geometry.geometryName(), image, Collections.emptyList(), ImageData.of(cape.capeData()), geometry.geometryData(), "", true, false, false, cape.capeId(), skinId);
@@ -331,13 +330,6 @@ public class GeyserUtils implements Extension {
 
     @Subscribe
     public void onEnable(GeyserPostInitializeEvent event) {
-        // This is temporary and we should remove this at some point lmao
-        try {
-            Class.forName("org.geysermc.geyser.entity.spawn.EntitySpawnContext");
-        } catch (ClassNotFoundException exception) {
-            logger().warning("Seems like you're on an outdated version of Geyser which doesn't support the refactored entity API, please update <3");
-        }
-
         Registries.BEDROCK_PACKET_TRANSLATORS.register(NpcRequestPacket.class, new NPCFormResponseTranslator());
         loadSkins();
         ReflectionUtils.init();
@@ -355,6 +347,7 @@ public class GeyserUtils implements Extension {
         for (String registeredEntity : REGISTERED_ENTITIES) {
             registerEntityToGeyser(registeredEntity);
         }
+
         Set<NbtMap> entityProperties = new HashSet<>();
         for (String id : ENTITIES_WAIT_FOR_LOAD) {
             NbtMap map = registerPropertiesForGeyser(id);
@@ -366,8 +359,7 @@ public class GeyserUtils implements Extension {
     }
 
     public void replaceTranslator() {
-        Registries.JAVA_PACKET_TRANSLATORS
-                .register(ClientboundAddEntityPacket.class, new JavaAddEntityTranslatorReplace());
+        Registries.JAVA_PACKET_TRANSLATORS.register(ClientboundAddEntityPacket.class, new JavaAddEntityTranslatorReplace());
     }
 
     @Subscribe
@@ -581,19 +573,17 @@ public class GeyserUtils implements Extension {
                 if (customEntityDataPacket.getWidth() != null)
                     entity.setBoundingBoxWidth(customEntityDataPacket.getWidth());
                 if (customEntityDataPacket.getScale() != null)
-                    entity.getDirtyMetadata().put(EntityDataTypes.SCALE, customEntityDataPacket.getScale());
+                    entity.getMetadata().put(EntityDataTypes.SCALE, customEntityDataPacket.getScale());
                 if (customEntityDataPacket.getColor() != null)
-                    entity.getDirtyMetadata().put(EntityDataTypes.COLOR, Byte.parseByte(String.valueOf(getColor(customEntityDataPacket.getColor()))));
+                    entity.getMetadata().put(EntityDataTypes.COLOR, (byte) getColor(customEntityDataPacket.getColor()));
                 if (customEntityDataPacket.getVariant() != null)
-                    entity.getDirtyMetadata().put(EntityDataTypes.VARIANT, customEntityDataPacket.getVariant());
+                    entity.getMetadata().put(EntityDataTypes.VARIANT, customEntityDataPacket.getVariant());
                 entity.updateBedrockMetadata();
             }
         } else if (customPacket instanceof EntityPropertyPacket entityPropertyPacket) {
             Entity entity = session.getEntityCache().getEntityByJavaId(entityPropertyPacket.getEntityId());
             if (entity != null) {
-                if (entityPropertyPacket.getIdentifier() == null
-                        || entityPropertyPacket.getValue() == null) return;
-
+                if (entityPropertyPacket.getIdentifier() == null || entityPropertyPacket.getValue() == null) return;
                 if (entity.getPropertyManager() == null) return;
                 if (entityPropertyPacket.getValue() instanceof Boolean value) {
                     entity.getPropertyManager().addProperty(new BooleanProperty(Identifier.of(entityPropertyPacket.getIdentifier()), false), value);
@@ -603,9 +593,7 @@ public class GeyserUtils implements Extension {
                 entity.updateBedrockEntityProperties();
             }
         } else if (customPacket instanceof EntityPropertyRegisterPacket entityPropertyRegisterPacket) {
-            if (entityPropertyRegisterPacket.getIdentifier() == null
-                    || entityPropertyRegisterPacket.getType() == null) return;
-
+            if (entityPropertyRegisterPacket.getIdentifier() == null || entityPropertyRegisterPacket.getType() == null) return;
             Entity entity = (session.getEntityCache().getEntityByJavaId(entityPropertyRegisterPacket.getEntityId()));
             if (entity != null) {
                 String def = CUSTOM_ENTITIES.get(session).getIfPresent(entity.getEntityId());
@@ -618,10 +606,6 @@ public class GeyserUtils implements Extension {
                     logger().info("DEF PROPERTIES: " + entityPropertyRegisterPacket.getIdentifier());
                 }
             }
-
-
         }
     }
-
 }
-
