@@ -10,7 +10,7 @@ import me.zimzaza4.geyserutils.geyser.form.element.Button;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataTypes;
 import org.cloudburstmc.protocol.bedrock.packet.NpcDialoguePacket;
 import org.cloudburstmc.protocol.bedrock.packet.SetEntityDataPacket;
-import org.geysermc.geyser.entity.GeyserDirtyMetadata;
+import org.geysermc.geyser.entity.GeyserEntityDataManager;
 import org.geysermc.geyser.entity.type.Entity;
 import org.geysermc.geyser.session.GeyserSession;
 
@@ -82,10 +82,7 @@ public class NpcDialogueForm {
         SetEntityDataPacket setEntityDataPacket = new SetEntityDataPacket();
         setEntityDataPacket.setRuntimeEntityId(this.bindEntity.geyserId());
 
-        GeyserDirtyMetadata data = this.bindEntity.getDirtyMetadata();
-
-        GeyserDirtyMetadata cloneData = GSON.fromJson(GSON.toJson(data), GeyserDirtyMetadata.class);
-
+        GeyserEntityDataManager cloneData = new GeyserEntityDataManager();
 
         cloneData.put(EntityDataTypes.NAME, this.title);
         cloneData.put(EntityDataTypes.NPC_DATA, skinData);
@@ -125,9 +122,7 @@ public class NpcDialogueForm {
         SetEntityDataPacket setEntityDataPacket = new SetEntityDataPacket();
         setEntityDataPacket.setRuntimeEntityId(this.bindEntity.geyserId());
 
-        GeyserDirtyMetadata data = this.bindEntity.getDirtyMetadata();
-
-        GeyserDirtyMetadata cloneData = GSON.fromJson(GSON.toJson(data), GeyserDirtyMetadata.class);
+        GeyserEntityDataManager cloneData = this.bindEntity.getMetadata();
 
         cloneData.apply(setEntityDataPacket.getMetadata());
 
