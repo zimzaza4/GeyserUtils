@@ -54,8 +54,8 @@ import static me.zimzaza4.geyserutils.geyser.GeyserUtils.CUSTOM_ENTITIES;
 import static me.zimzaza4.geyserutils.geyser.GeyserUtils.LOADED_ENTITY_DEFINITIONS;
 
 public final class JavaAddEntityTranslatorReplace extends PacketTranslator<ClientboundAddEntityPacket> {
-    private static final boolean SHOW_PLAYER_LIST_LOGS =
-            Boolean.parseBoolean(System.getProperty("Geyser.ShowPlayerListLogs", "true"));
+
+    private static final boolean SHOW_PLAYER_LIST_LOGS = Boolean.parseBoolean(System.getProperty("Geyser.ShowPlayerListLogs", "true"));
 
     @Override
     public void translate(GeyserSession session, ClientboundAddEntityPacket packet) {
@@ -77,18 +77,6 @@ public final class JavaAddEntityTranslatorReplace extends PacketTranslator<Clien
             customIdentifier = customEntityCache.getIfPresent(packet.getEntityId());
         }
 
-        if (packet.getType() == EntityType.AREA_EFFECT_CLOUD && customIdentifier != null) {
-            GeyserEntityType interactionType = GeyserEntityType.of(EntityType.INTERACTION);
-            EntityTypeDefinition<?> interactionDefinition = Registries.JAVA_ENTITY_TYPES.get(interactionType);
-            if (interactionDefinition != null && interactionDefinition.factory() != null) {
-                definition = interactionDefinition;
-            } else {
-                session.getGeyser().getLogger().warning(
-                        "Could not resolve the INTERACTION entity definition for custom area-effect-cloud entity "
-                                + packet.getEntityId());
-            }
-        }
-
         Vector3f position = Vector3f.from(packet.getX(), packet.getY(), packet.getZ());
         Vector3f motion = packet.getMovement().toFloat();
         float yaw = packet.getYaw();
@@ -108,19 +96,12 @@ public final class JavaAddEntityTranslatorReplace extends PacketTranslator<Clien
             PlayerEntity entity;
             if (packet.getUuid().equals(session.getPlayerEntity().uuid())) {
                 // Server is sending a fake version of the current player
-                entity = new PlayerEntity(
-                        context,
-                        session.getPlayerEntity().getUsername(),
-                        session.getPlayerEntity().getTextures()
-                );
+                entity = new PlayerEntity(context, session.getPlayerEntity().getUsername(), session.getPlayerEntity().getTextures());
             } else {
                 entity = session.getEntityCache().getPlayerEntity(packet.getUuid());
                 if (entity == null) {
                     if (SHOW_PLAYER_LIST_LOGS) {
-                        GeyserImpl.getInstance().getLogger().error(
-                                GeyserLocale.getLocaleStringLog("geyser.entity.player.failed_list", packet.getUuid())
-                        );
-                    }
+                        GeyserImpl.getInstance().getLogger().error(GeyserLocale.getLocaleStringLog("geyser.entity.player.failed_list", packet.getUuid()));}
                     return;
                 }
 
@@ -133,19 +114,12 @@ public final class JavaAddEntityTranslatorReplace extends PacketTranslator<Clien
             }
 
             entity.sendPlayer();
-            if (!EnvironmentUtils.IS_UNIT_TESTING) {
-                SkinManager.requestAndHandleSkinAndCape(entity, session, null);
-            }
+            if (!EnvironmentUtils.IS_UNIT_TESTING) SkinManager.requestAndHandleSkinAndCape(entity, session, null);
             return;
         }
 
         if (!context.callServerSpawnEvent()) {
-            GeyserImpl.getInstance().getLogger().debug(
-                    session,
-                    "Cancelled entity spawn (%s) at (%s)",
-                    entityType.identifier(),
-                    context.position()
-            );
+            GeyserImpl.getInstance().getLogger().debug(session, "Cancelled entity spawn (%s) at (%s)", entityType.identifier(), context.position());
             return;
         }
 
@@ -160,6 +134,13 @@ public final class JavaAddEntityTranslatorReplace extends PacketTranslator<Clien
             } else {
                 return;
             }
+        } else if (packet.getType() == EntityType.AREA_EFFECT_CLOUD) {
+            GeyserEntityType interactionType = GeyserEntityType.of(EntityType.INTERACTION);
+            EntityTypeDefinition<?> interactionDefinition = Registries.JAVA_ENTITY_TYPES.get(interactionType);
+            if (interactionDefinition == null) return;
+            var interactionContext = EntitySpawnContext.fromPacket(session, interactionDefinition, packet);
+
+            entity = interactionDefinition.factory().create(interactionContext);
         } else {
             if (definition.factory() == null) {
                 session.getGeyser().getLogger().warning("Entity definition has no factory for add entity packet " + packet);
