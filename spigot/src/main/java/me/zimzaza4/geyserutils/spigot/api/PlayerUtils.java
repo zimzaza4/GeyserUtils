@@ -23,6 +23,10 @@ public class PlayerUtils {
         player.sendPluginMessage(GeyserUtils.getInstance(), GeyserUtilsChannels.MAIN, GeyserUtils.getPacketManager().encodePacket(new CameraShakeCustomPayloadPacket(intensity, duration, type)));
     }
 
+    public static void playEntityAnimation(Player player, Animation animation, Integer entityId) {
+        playEntityAnimation(player, animation, new ArrayList<>(entityId));
+    }
+
     public static void playEntityAnimation(Player player, Animation animation, Entity... entityList) {
         List<Integer> idList = new ArrayList<>();
         for (Entity entity : entityList) {
@@ -37,7 +41,6 @@ public class PlayerUtils {
         packet.parseFromAnimation(animation);
         packet.setEntityJavaIds(entityList);
         player.sendPluginMessage(GeyserUtils.getInstance(), GeyserUtilsChannels.MAIN, GeyserUtils.getPacketManager().encodePacket(packet));
-
     }
 
     public static void sendCameraInstruction(Player player, Instruction instruction) {

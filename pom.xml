@@ -6,7 +6,7 @@
 
     <groupId>me.zimzaza4</groupId>
     <artifactId>GeyserUtils</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>1.0-SNAPSHOT-${commit.short}</version>
     <packaging>pom</packaging>
     <modules>
         <module>common</module>
