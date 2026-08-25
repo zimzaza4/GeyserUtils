@@ -193,7 +193,9 @@ public class GeyserUtils implements Extension {
                 .putBoolean("summonable", false).build()
         );
 
-        Registries.BEDROCK_ENTITY_IDENTIFIERS.set(NbtMap.builder().putList("idlist", NbtType.COMPOUND, idList).build());
+        Registries.BEDROCK_ENTITY_IDENTIFIERS.set(NbtMap.builder()
+                .putList("idlist", NbtType.COMPOUND, idList.toArray(NbtMap[]::new))
+                .build());
 
         BedrockEntityDefinition def = createCustomBedrockDefinition(id, buildProperties(id));
 
@@ -636,4 +638,3 @@ public class GeyserUtils implements Extension {
     }
 
 }
-
